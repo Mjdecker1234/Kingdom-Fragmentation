@@ -1,0 +1,68 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>9</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>KingdomFragmentation</AssemblyName>
+    <RootNamespace>KingdomFragmentation</RootNamespace>
+    <Platforms>AnyCPU</Platforms>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+    <Deterministic>true</Deterministic>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Suppress warnings about nullable reference types in referenced non-nullable code -->
+    <NoWarn>CS8618</NoWarn>
+  </PropertyGroup>
+
+  <!-- =====================================================================
+       Bannerlord game path. Override via GameFolder property:
+         dotnet build -p:GameFolder="C:\path\to\Bannerlord"
+       Or set the BANNERLORD_GAME_DIR environment variable.
+       ===================================================================== -->
+  <PropertyGroup>
+    <GameFolder Condition="'$(GameFolder)' == '' AND '$(BANNERLORD_GAME_DIR)' != ''">$(BANNERLORD_GAME_DIR)</GameFolder>
+    <GameFolder Condition="'$(GameFolder)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Mount &amp; Blade II Bannerlord</GameFolder>
+    <BannerlordBinDir>$(GameFolder)\bin\Win64_Shipping_Client</BannerlordBinDir>
+    <BannerlordModulesDir>$(GameFolder)\Modules</BannerlordModulesDir>
+  </PropertyGroup>
+
+  <!-- Core Bannerlord assemblies -->
+  <ItemGroup>
+    <Reference Include="TaleWorlds.MountAndBlade">
+      <HintPath>$(BannerlordBinDir)\TaleWorlds.MountAndBlade.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.Core">
+      <HintPath>$(BannerlordBinDir)\TaleWorlds.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.Library">
+      <HintPath>$(BannerlordBinDir)\TaleWorlds.Library.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.ObjectSystem">
+      <HintPath>$(BannerlordBinDir)\TaleWorlds.ObjectSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.CampaignSystem">
+      <HintPath>$(BannerlordModulesDir)\SandBox\bin\Win64_Shipping_Client\TaleWorlds.CampaignSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TaleWorlds.Localization">
+      <HintPath>$(BannerlordBinDir)\TaleWorlds.Localization.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- MCM (Mod Configuration Menu) — pulled from NuGet -->
+  <ItemGroup>
+    <PackageReference Include="Bannerlord.MCM.Impl.FluentBuilder" Version="5.*" />
+  </ItemGroup>
+
+  <!-- Copy output to the mod's Modules directory after build (optional convenience target) -->
+  <PropertyGroup>
+    <ModOutputDir>$(BannerlordModulesDir)\KingdomFragmentation\bin\Win64_Shipping_Client</ModOutputDir>
+  </PropertyGroup>
+
+</Project>
