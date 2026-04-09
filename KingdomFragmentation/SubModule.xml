@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Module>
+  <Name value="Kingdom Fragmentation" />
+  <Id value="KingdomFragmentation" />
+  <Version value="v1.0.0" />
+  <SingleplayerModule value="true" />
+  <MultiplayerModule value="false" />
+  <Official value="false" />
+  <DefaultModule value="false" />
+
+  <DependedModules>
+    <!-- Native must be loaded first -->
+    <DependedModule Id="Native" />
+    <DependedModule Id="SandBoxCore" />
+    <DependedModule Id="Sandbox" />
+    <DependedModule Id="StoryMode" DependentVersion="e1.0.0" Optional="true" />
+    <!-- MCM is optional: the mod falls back to compiled-in defaults when absent -->
+    <DependedModule Id="MCM" DependentVersion="v5.0.0" Optional="true" />
+  </DependedModules>
+
+  <SubModules>
+    <SubModule>
+      <Name value="KingdomFragmentation" />
+      <DLLName value="KingdomFragmentation.dll" />
+      <SubModuleClassType value="KingdomFragmentation.SubModule" />
+      <Tags>
+        <Tag key="DedicatedServerType" value="none" />
+        <Tag key="IsNoRenderModeElement" value="false" />
+      </Tags>
+    </SubModule>
+  </SubModules>
+
+  <Xmls />
+</Module>
