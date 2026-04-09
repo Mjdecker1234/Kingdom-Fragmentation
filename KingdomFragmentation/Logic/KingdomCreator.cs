@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Linq;
 using KingdomFragmentation.Helpers;
 using KingdomFragmentation.Settings;
@@ -31,7 +30,7 @@ namespace KingdomFragmentation.Logic
         /// the clan into it.
         /// </summary>
         /// <returns>The newly created kingdom, or <c>null</c> on failure.</returns>
-        public Kingdom? CreateForClan(Clan clan, IReadOnlyList<Kingdom> originalKingdoms)
+        public Kingdom? CreateForClan(Clan clan)
         {
             if (clan?.Leader == null)
             {
@@ -128,8 +127,16 @@ namespace KingdomFragmentation.Logic
 
         private CultureObject? ResolveCulture(Clan clan)
         {
-            // PreserveCulture=false still uses clan culture — there is no culture-override option
-            return clan.Culture;
+            bool preserveOriginalCulture = _settings?.PreserveCulture ?? true;
+            if (preserveOriginalCulture)
+            {
+                // clan.Kingdom is still the pre-fragmentation kingdom here because
+                // ChangeKingdomAction has not been called yet.
+                return clan.Kingdom?.Culture ?? clan.Culture;
+            }
+
+            // When preservation is disabled, use the clan's own personal culture.
+            return clan.Culture ?? clan.Kingdom?.Culture;
         }
 
         private Banner ResolveBanner(Clan clan)
@@ -146,7 +153,7 @@ namespace KingdomFragmentation.Logic
                     if (clan.Culture != null)
                     {
                         return new Banner(
-                            clan.Banner?.BannerDataList?[0]?.MeshId.ToString()
+                            clan.Banner?.BannerDataList?.FirstOrDefault()?.MeshId.ToString()
                                 ?? Banner.CreateRandomBanner().Serialize(),
                             clan.Culture.Color,
                             clan.Culture.Color2);

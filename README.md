@@ -141,8 +141,14 @@ The compiled `KingdomFragmentation.dll` will appear in
 
 * **New campaigns only** — The `_fragmentationApplied` save flag and the
   `NewCampaignsOnly` MCM setting ensure the mod never fires on loaded saves.
-* **MCM required** — If MCM is absent, the mod catches the missing-instance case
-  and uses compiled-in defaults so the game still starts without crashing.
+* **MCM optional** — MCM is listed as an **optional** dependency in `SubModule.xml`.
+  If MCM is absent, the behavior catches the missing-instance case and uses
+  compiled-in defaults so the game still starts without crashing.  For the
+  best experience, install MCM v5.x.
+* **Advisory settings** — `JoinGracePeriodDays`, `DefectionLockoutDays`,
+  `AntiCollapseProtectionDays`, and `DisableDiplomacyDays` are logged at campaign
+  start as intent, but full AI interception requires an optional Harmony patch
+  (not bundled).  `StartingTruceDays` is fully enforced via a daily-tick handler.
 * **Sandbox / story mode** — Both are supported; the trigger fires after the
   initial world setup in either mode.
 * **Other mods** — Mods that also alter kingdom/clan structure at campaign start

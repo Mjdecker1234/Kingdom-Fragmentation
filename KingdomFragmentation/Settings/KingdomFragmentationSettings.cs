@@ -266,7 +266,8 @@ namespace KingdomFragmentation.Settings
             "Grace Period — No Joining (days)",
             0, 365,
             RequireRestart = false,
-            HintText = "Clans cannot join other kingdoms for this many campaign days after fragmentation.")]
+            HintText = "Advisory: clans should not join other kingdoms for this many days. "
+                     + "Logged at campaign start. Full interception requires an optional Harmony patch.")]
         public int JoinGracePeriodDays
         {
             get => _joinGracePeriodDays;
@@ -279,7 +280,8 @@ namespace KingdomFragmentation.Settings
             "Defection Lockout Period (days)",
             0, 365,
             RequireRestart = false,
-            HintText = "Reduces instant reunification by locking clans in their new kingdom for this period.")]
+            HintText = "Advisory: reduces instant reunification intent for this period. "
+                     + "Logged at campaign start. Full clan-lock enforcement requires an optional Harmony patch.")]
         public int DefectionLockoutDays
         {
             get => _defectionLockoutDays;
@@ -352,8 +354,8 @@ namespace KingdomFragmentation.Settings
             "Anti-Collapse Protection (days)",
             0, 365,
             RequireRestart = false,
-            HintText = "New kingdoms cannot lose their last fief for this many days, "
-                     + "preventing instant collapse.")]
+            HintText = "Advisory: new kingdoms should not lose their last fief for this many days. "
+                     + "Logged at campaign start. Settlement-loss interception requires an optional Harmony patch.")]
         public int AntiCollapseProtectionDays
         {
             get => _antiCollapseProtectionDays;
@@ -366,8 +368,8 @@ namespace KingdomFragmentation.Settings
             "Disable Diplomacy Actions (days)",
             0, 180,
             RequireRestart = false,
-            HintText = "Suppresses automatic diplomatic actions for this many days "
-                     + "to let the map settle.")]
+            HintText = "Advisory: AI should suppress automatic diplomatic actions for this many days. "
+                     + "Logged at campaign start. AI action suppression requires an optional Harmony patch.")]
         public int DisableDiplomacyDays
         {
             get => _disableDiplomacyDays;

@@ -37,11 +37,29 @@ namespace KingdomFragmentation.Logic
                 .Where(k => !k.IsEliminated)
                 .ToList();
 
-            LogHelper.Debug($"  Original kingdoms: {originalKingdoms.Count}");
+            LogHelper.Debug("  Original kingdoms: " + originalKingdoms.Count);
 
             // Collect all eligible clans
             var eligibleClans = CollectEligibleClans(originalKingdoms);
-            LogHelper.Info($"FragmentationEngine: {eligibleClans.Count} eligible clan(s) to process.");
+
+            // Apply OneSettlement filter when in settlement-based mode
+            bool oneClanOneKingdom   = _settings?.OneClanOneKingdom      ?? true;
+            bool oneSettlementMode   = _settings?.OneSettlementOneKingdom ?? false;
+
+            if (!oneClanOneKingdom && oneSettlementMode)
+            {
+                // One-settlement mode: a kingdom must represent exactly one fief,
+                // so we only include clans that currently own exactly one town or
+                // castle.  Multi-fief clans are skipped because Bannerlord does not
+                // allow splitting a clan across multiple kingdoms.
+                eligibleClans = eligibleClans
+                    .Where(c => c.Settlements.Count(s => s.IsTown || s.IsCastle) == 1)
+                    .ToList();
+                LogHelper.Info("One-Settlement mode: filtered to "
+                    + eligibleClans.Count + " single-fief clan(s).");
+            }
+
+            LogHelper.Info("FragmentationEngine: " + eligibleClans.Count + " eligible clan(s) to process.");
 
             if (eligibleClans.Count == 0)
             {
@@ -49,20 +67,32 @@ namespace KingdomFragmentation.Logic
                 return;
             }
 
-            var creator        = new KingdomCreator(_settings);
-            var reassigner     = new SettlementReassigner(_settings);
-            var diplomacyInit  = new DiplomacyInitializer(_settings);
+            // ----------------------------------------------------------------
+            // Capture pre-fragmentation clan → original kingdom mapping BEFORE
+            // any ChangeKingdomAction calls mutate live clan membership.
+            // This snapshot is required for correct RivalryBased diplomacy.
+            // ----------------------------------------------------------------
+            var clanOriginSnapshot = new Dictionary<Clan, Kingdom>(eligibleClans.Count);
+            foreach (var clan in eligibleClans)
+            {
+                if (clan.Kingdom != null)
+                    clanOriginSnapshot[clan] = clan.Kingdom;
+            }
+
+            var creator       = new KingdomCreator(_settings);
+            var reassigner    = new SettlementReassigner(_settings);
+            var diplomacyInit = new DiplomacyInitializer(_settings);
 
             // Track newly created kingdoms so we can set up diplomacy afterwards
             var newKingdoms = new List<Kingdom>();
 
             foreach (var clan in eligibleClans)
             {
-                LogHelper.Debug($"  Processing clan: {clan.Name} (tier {clan.Tier})");
+                LogHelper.Debug("  Processing clan: " + clan.Name + " (tier " + clan.Tier + ")");
 
                 if (dryRun)
                 {
-                    LogHelper.Info($"  [DRY RUN] Would create kingdom for clan '{clan.Name}'.");
+                    LogHelper.Info("  [DRY RUN] Would create kingdom for clan '" + clan.Name + "'.");
                     continue;
                 }
 
@@ -70,16 +100,16 @@ namespace KingdomFragmentation.Logic
 
                 try
                 {
-                    // Skip if the clan is already a solo kingdom
+                    // Skip if the clan is already a sole-kingdom ruling clan
                     if (clan.Kingdom != null && clan.Kingdom.Clans.Count == 1
                         && clan.Kingdom.RulingClan == clan)
                     {
-                        LogHelper.Debug($"  Clan '{clan.Name}' is already a sole kingdom — skipping creation.");
+                        LogHelper.Debug("  Clan '" + clan.Name + "' is already a sole kingdom — skipping creation.");
                         newKingdoms.Add(clan.Kingdom);
                         continue;
                     }
 
-                    var newKingdom = creator.CreateForClan(clan, originalKingdoms);
+                    var newKingdom = creator.CreateForClan(clan);
                     if (newKingdom != null)
                     {
                         newKingdoms.Add(newKingdom);
@@ -88,7 +118,7 @@ namespace KingdomFragmentation.Logic
                 }
                 catch (System.Exception ex)
                 {
-                    LogHelper.Error($"  Error processing clan '{clan.Name}': {ex.Message}");
+                    LogHelper.Error("  Error processing clan '" + clan.Name + "': " + ex.Message);
                     if (!safeFallback)
                         throw;
                 }
@@ -96,8 +126,8 @@ namespace KingdomFragmentation.Logic
 
             if (!dryRun)
             {
-                diplomacyInit.Initialize(newKingdoms, originalKingdoms);
-                LogHelper.Info($"FragmentationEngine: finished. {newKingdoms.Count} kingdom(s) in play.");
+                diplomacyInit.Initialize(newKingdoms, originalKingdoms, clanOriginSnapshot);
+                LogHelper.Info("FragmentationEngine: finished. " + newKingdoms.Count + " kingdom(s) in play.");
             }
         }
 
@@ -107,14 +137,14 @@ namespace KingdomFragmentation.Logic
 
         private List<Clan> CollectEligibleClans(List<Kingdom> originalKingdoms)
         {
-            bool debug           = _settings?.DebugLogging ?? false;
-            bool majorOnly       = _settings?.MajorNobleClanOnly ?? true;
-            bool includeRuling   = _settings?.IncludeRulingClans ?? true;
-            bool includeMinor    = _settings?.IncludeMinorFactions ?? false;
-            bool includeMerc     = _settings?.IncludeMercenaries ?? false;
-            bool includeRebel    = _settings?.IncludeRebelClans ?? false;
-            bool skipLandless    = _settings?.SkipLandlessClans ?? false;
-            int  minTier         = _settings?.MinClanTier ?? 1;
+            bool debug         = _settings?.DebugLogging     ?? false;
+            bool majorOnly     = _settings?.MajorNobleClanOnly ?? true;
+            bool includeRuling = _settings?.IncludeRulingClans ?? true;
+            bool includeMinor  = _settings?.IncludeMinorFactions ?? false;
+            bool includeMerc   = _settings?.IncludeMercenaries   ?? false;
+            bool includeRebel  = _settings?.IncludeRebelClans    ?? false;
+            bool skipLandless  = _settings?.SkipLandlessClans    ?? false;
+            int  minTier       = _settings?.MinClanTier          ?? 1;
 
             var result = new List<Clan>();
 
@@ -128,42 +158,43 @@ namespace KingdomFragmentation.Logic
                     bool isRuling = kingdom.RulingClan == clan;
                     if (isRuling && !includeRuling)
                     {
-                        if (debug) LogHelper.Debug($"    Skipping ruling clan '{clan.Name}'.");
+                        if (debug) LogHelper.Debug("    Skipping ruling clan '" + clan.Name + "'.");
                         continue;
                     }
 
                     // --- Minor faction ---
                     if (clan.IsMinorFaction && !includeMinor)
                     {
-                        if (debug) LogHelper.Debug($"    Skipping minor faction '{clan.Name}'.");
+                        if (debug) LogHelper.Debug("    Skipping minor faction '" + clan.Name + "'.");
                         continue;
                     }
 
                     // --- Mercenary ---
                     if (ClanHelper.IsMercenary(clan) && !includeMerc)
                     {
-                        if (debug) LogHelper.Debug($"    Skipping mercenary clan '{clan.Name}'.");
+                        if (debug) LogHelper.Debug("    Skipping mercenary clan '" + clan.Name + "'.");
                         continue;
                     }
 
                     // --- Rebel ---
                     if (ClanHelper.IsRebel(clan) && !includeRebel)
                     {
-                        if (debug) LogHelper.Debug($"    Skipping rebel clan '{clan.Name}'.");
+                        if (debug) LogHelper.Debug("    Skipping rebel clan '" + clan.Name + "'.");
                         continue;
                     }
 
                     // --- Tier threshold ---
                     if (majorOnly && clan.Tier < minTier)
                     {
-                        if (debug) LogHelper.Debug($"    Skipping low-tier clan '{clan.Name}' (tier {clan.Tier} < {minTier}).");
+                        if (debug) LogHelper.Debug("    Skipping low-tier clan '" + clan.Name
+                            + "' (tier " + clan.Tier + " < " + minTier + ").");
                         continue;
                     }
 
                     // --- Landless skip ---
                     if (skipLandless && !ClanHelper.HasFief(clan))
                     {
-                        if (debug) LogHelper.Debug($"    Skipping landless clan '{clan.Name}'.");
+                        if (debug) LogHelper.Debug("    Skipping landless clan '" + clan.Name + "'.");
                         continue;
                     }
 

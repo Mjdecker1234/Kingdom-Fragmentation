@@ -14,8 +14,8 @@
     <DependedModule Id="SandBoxCore" />
     <DependedModule Id="Sandbox" />
     <DependedModule Id="StoryMode" DependentVersion="e1.0.0" Optional="true" />
-    <!-- MCM is required for the settings UI -->
-    <DependedModule Id="MCM" DependentVersion="v5.0.0" />
+    <!-- MCM is optional: the mod falls back to compiled-in defaults when absent -->
+    <DependedModule Id="MCM" DependentVersion="v5.0.0" Optional="true" />
   </DependedModules>
 
   <SubModules>
