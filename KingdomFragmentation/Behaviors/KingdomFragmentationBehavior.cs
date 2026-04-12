@@ -243,8 +243,8 @@ namespace KingdomFragmentation.Behaviors
         {
             if (_assignedClanIds.Count == 0) return;
 
-            int count = Math.Min(_assignedClanIds.Count, _assignedKingdomIds.Count);
-            for (int i = 0; i < count; i++)
+            int assignmentCount = Math.Min(_assignedClanIds.Count, _assignedKingdomIds.Count);
+            for (int i = 0; i < assignmentCount; i++)
             {
                 try
                 {
@@ -305,8 +305,8 @@ namespace KingdomFragmentation.Behaviors
                         continue;
 
                     // Find the first assigned clan that should be in this kingdom
-                    int count = Math.Min(_assignedClanIds.Count, _assignedKingdomIds.Count);
-                    for (int i = 0; i < count; i++)
+                    int assignmentCount = Math.Min(_assignedClanIds.Count, _assignedKingdomIds.Count);
+                    for (int i = 0; i < assignmentCount; i++)
                     {
                         if (_assignedKingdomIds[i] != kingdomId) continue;
 

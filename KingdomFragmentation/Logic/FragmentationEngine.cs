@@ -89,9 +89,9 @@ namespace KingdomFragmentation.Logic
                     .ThenByDescending(c => c.Renown)
                     .ToList();
 
-                int actualTarget = Math.Min(targetCount, sorted.Count);
-                leaderClans   = sorted.Take(actualTarget).ToList();
-                followerClans = sorted.Skip(actualTarget).ToList();
+                int leaderCount = Math.Min(targetCount, sorted.Count);
+                leaderClans   = sorted.Take(leaderCount).ToList();
+                followerClans = sorted.Skip(leaderCount).ToList();
 
                 LogHelper.Info("Target kingdom count: " + targetCount
                     + " → " + leaderClans.Count + " leader(s), "
