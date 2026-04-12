@@ -116,6 +116,20 @@ namespace KingdomFragmentation.Settings
         // ==================================================================
 
         [SettingsPropertyGroupAttribute("2. Kingdom Creation", GroupOrder = 2)]
+        [SettingsPropertyIntegerAttribute(
+            "Target Number of Kingdoms",
+            0, 200,
+            RequireRestart = false,
+            HintText = "How many kingdoms to generate. 0 = one kingdom per eligible clan (default). "
+                     + "When > 0, the best N clans become kingdom leaders and remaining clans are distributed among them.")]
+        public int TargetKingdomCount
+        {
+            get => _targetKingdomCount;
+            set { _targetKingdomCount = value; OnPropertyChanged(); }
+        }
+        private int _targetKingdomCount = 0;
+
+        [SettingsPropertyGroupAttribute("2. Kingdom Creation", GroupOrder = 2)]
         [SettingsPropertyBoolAttribute(
             "One Clan = One Kingdom",
             RequireRestart = false,
@@ -266,8 +280,8 @@ namespace KingdomFragmentation.Settings
             "Grace Period — No Joining (days)",
             0, 365,
             RequireRestart = false,
-            HintText = "Advisory: clans should not join other kingdoms for this many days. "
-                     + "Logged at campaign start. Full interception requires an optional Harmony patch.")]
+            HintText = "Clans cannot join other kingdoms for this many days after fragmentation. "
+                     + "Enforced via daily clan loyalty check. The player's clan is exempt.")]
         public int JoinGracePeriodDays
         {
             get => _joinGracePeriodDays;
@@ -280,8 +294,8 @@ namespace KingdomFragmentation.Settings
             "Defection Lockout Period (days)",
             0, 365,
             RequireRestart = false,
-            HintText = "Advisory: reduces instant reunification intent for this period. "
-                     + "Logged at campaign start. Full clan-lock enforcement requires an optional Harmony patch.")]
+            HintText = "Clans are forced to stay in their assigned kingdom for this many days. "
+                     + "Prevents instant reunification after fragmentation. The player's clan is exempt.")]
         public int DefectionLockoutDays
         {
             get => _defectionLockoutDays;
@@ -354,8 +368,8 @@ namespace KingdomFragmentation.Settings
             "Anti-Collapse Protection (days)",
             0, 365,
             RequireRestart = false,
-            HintText = "Advisory: new kingdoms should not lose their last fief for this many days. "
-                     + "Logged at campaign start. Settlement-loss interception requires an optional Harmony patch.")]
+            HintText = "New kingdoms are actively protected from elimination for this many days. "
+                     + "If a kingdom loses all its clans, the mod will move a clan back to revive it.")]
         public int AntiCollapseProtectionDays
         {
             get => _antiCollapseProtectionDays;

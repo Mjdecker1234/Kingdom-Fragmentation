@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using KingdomFragmentation.Helpers;
 using KingdomFragmentation.Settings;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Actions;
 
 namespace KingdomFragmentation.Logic
 {
@@ -14,6 +16,13 @@ namespace KingdomFragmentation.Logic
     public sealed class FragmentationEngine
     {
         private readonly KingdomFragmentationSettings? _settings;
+
+        /// <summary>
+        /// After <see cref="Run"/> completes successfully this contains every
+        /// clan → KF-kingdom assignment so the behaviour can persist and enforce it.
+        /// </summary>
+        public Dictionary<string, string> ClanKingdomAssignments { get; }
+            = new Dictionary<string, string>();
 
         public FragmentationEngine(KingdomFragmentationSettings? settings)
         {
@@ -34,7 +43,7 @@ namespace KingdomFragmentation.Logic
 
             // Snapshot: kingdoms that existed BEFORE we start changing things
             var originalKingdoms = Kingdom.All
-                .Where(k => !k.IsEliminated)
+                .Where(k => k != null && !k.IsEliminated)
                 .ToList();
 
             LogHelper.Debug("  Original kingdoms: " + originalKingdoms.Count);
@@ -48,10 +57,6 @@ namespace KingdomFragmentation.Logic
 
             if (!oneClanOneKingdom && oneSettlementMode)
             {
-                // One-settlement mode: a kingdom must represent exactly one fief,
-                // so we only include clans that currently own exactly one town or
-                // castle.  Multi-fief clans are skipped because Bannerlord does not
-                // allow splitting a clan across multiple kingdoms.
                 eligibleClans = eligibleClans
                     .Where(c => c.Settlements.Count(s => s.IsTown || s.IsCastle) == 1)
                     .ToList();
@@ -68,9 +73,40 @@ namespace KingdomFragmentation.Logic
             }
 
             // ----------------------------------------------------------------
+            // Target kingdom count: when configured, select the best N clans
+            // to become kingdom leaders and distribute the rest among them.
+            // ----------------------------------------------------------------
+            int targetCount = _settings?.TargetKingdomCount ?? 0;
+            List<Clan>? leaderClans = null;
+            List<Clan>? followerClans = null;
+
+            if (targetCount > 0)
+            {
+                // Sort by suitability: higher tier first, then clans with fiefs first
+                var sorted = eligibleClans
+                    .OrderByDescending(c => c.Tier)
+                    .ThenByDescending(c => c.Settlements.Count(s => s.IsTown || s.IsCastle))
+                    .ThenByDescending(c => c.Renown)
+                    .ToList();
+
+                int actualTarget = Math.Min(targetCount, sorted.Count);
+                leaderClans   = sorted.Take(actualTarget).ToList();
+                followerClans = sorted.Skip(actualTarget).ToList();
+
+                LogHelper.Info("Target kingdom count: " + targetCount
+                    + " → " + leaderClans.Count + " leader(s), "
+                    + followerClans.Count + " follower(s) to distribute.");
+            }
+            else
+            {
+                // Default: every eligible clan becomes a kingdom leader
+                leaderClans   = eligibleClans;
+                followerClans = new List<Clan>();
+            }
+
+            // ----------------------------------------------------------------
             // Capture pre-fragmentation clan → original kingdom mapping BEFORE
             // any ChangeKingdomAction calls mutate live clan membership.
-            // This snapshot is required for correct RivalryBased diplomacy.
             // ----------------------------------------------------------------
             var clanOriginSnapshot = new Dictionary<Clan, Kingdom>(eligibleClans.Count);
             foreach (var clan in eligibleClans)
@@ -86,9 +122,10 @@ namespace KingdomFragmentation.Logic
             // Track newly created kingdoms so we can set up diplomacy afterwards
             var newKingdoms = new List<Kingdom>();
 
-            foreach (var clan in eligibleClans)
+            // ---- Phase 1: Create kingdoms for leader clans ------------------
+            foreach (var clan in leaderClans)
             {
-                LogHelper.Debug("  Processing clan: " + clan.Name + " (tier " + clan.Tier + ")");
+                LogHelper.Debug("  Processing leader clan: " + clan.Name + " (tier " + clan.Tier + ")");
 
                 if (dryRun)
                 {
@@ -106,6 +143,7 @@ namespace KingdomFragmentation.Logic
                     {
                         LogHelper.Debug("  Clan '" + clan.Name + "' is already a sole kingdom — skipping creation.");
                         newKingdoms.Add(clan.Kingdom);
+                        RecordAssignment(clan, clan.Kingdom);
                         continue;
                     }
 
@@ -114,14 +152,27 @@ namespace KingdomFragmentation.Logic
                     {
                         newKingdoms.Add(newKingdom);
                         reassigner.Reassign(clan, newKingdom);
+                        RecordAssignment(clan, newKingdom);
                     }
                 }
-                catch (System.Exception ex)
+                catch (Exception ex)
                 {
-                    LogHelper.Error("  Error processing clan '" + clan.Name + "': " + ex.Message);
+                    LogHelper.Error("  Error processing leader clan '" + clan.Name + "': " + ex.Message);
                     if (!safeFallback)
                         throw;
                 }
+            }
+
+            // ---- Phase 2: Distribute follower clans among new kingdoms ------
+            if (!dryRun && followerClans.Count > 0 && newKingdoms.Count > 0)
+            {
+                DistributeFollowerClans(followerClans, newKingdoms,
+                    clanOriginSnapshot, reassigner);
+            }
+            else if (dryRun && followerClans.Count > 0)
+            {
+                LogHelper.Info("  [DRY RUN] Would distribute " + followerClans.Count
+                    + " follower clan(s) among " + newKingdoms.Count + " kingdom(s).");
             }
 
             if (!dryRun)
@@ -129,6 +180,96 @@ namespace KingdomFragmentation.Logic
                 diplomacyInit.Initialize(newKingdoms, originalKingdoms, clanOriginSnapshot);
                 LogHelper.Info("FragmentationEngine: finished. " + newKingdoms.Count + " kingdom(s) in play.");
             }
+        }
+
+        // -----------------------------------------------------------------------
+        // Follower distribution
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Moves follower clans into existing new kingdoms.  Preference:
+        /// 1. The new kingdom whose leader came from the same original kingdom.
+        /// 2. The new kingdom with the same culture.
+        /// 3. The new kingdom with the fewest clans (load-balance).
+        /// </summary>
+        private void DistributeFollowerClans(
+            List<Clan> followers,
+            List<Kingdom> newKingdoms,
+            Dictionary<Clan, Kingdom> clanOriginSnapshot,
+            SettlementReassigner reassigner)
+        {
+            // Build a map from original-kingdom → new kingdom (using the leader's origin)
+            var originToNew = new Dictionary<Kingdom, Kingdom>();
+            foreach (var nk in newKingdoms)
+            {
+                if (nk?.RulingClan == null) continue;
+                if (clanOriginSnapshot.TryGetValue(nk.RulingClan, out var origin) && origin != null)
+                {
+                    // First match wins (multiple leaders may share an origin)
+                    if (!originToNew.ContainsKey(origin))
+                        originToNew[origin] = nk;
+                }
+            }
+
+            bool safeFallback = _settings?.ErrorSafeFallback ?? true;
+
+            foreach (var clan in followers)
+            {
+                try
+                {
+                    Kingdom? target = null;
+
+                    // 1. Same original kingdom
+                    if (clanOriginSnapshot.TryGetValue(clan, out var origin) && origin != null)
+                        originToNew.TryGetValue(origin, out target);
+
+                    // 2. Same culture
+                    if (target == null && clan.Culture != null)
+                    {
+                        target = newKingdoms
+                            .Where(k => k.Culture == clan.Culture)
+                            .OrderBy(k => k.Clans.Count)
+                            .FirstOrDefault();
+                    }
+
+                    // 3. Fewest clans (load-balance)
+                    if (target == null)
+                    {
+                        target = newKingdoms
+                            .OrderBy(k => k.Clans.Count)
+                            .FirstOrDefault();
+                    }
+
+                    if (target == null)
+                    {
+                        LogHelper.Warn("  No target kingdom for follower clan '" + clan.Name + "' — skipping.");
+                        continue;
+                    }
+
+                    LogHelper.Debug("  Assigning follower clan '" + clan.Name
+                        + "' to kingdom '" + target.Name + "'.");
+
+                    ChangeKingdomAction.ApplyByJoinToKingdom(clan, target, showNotification: false);
+                    reassigner.Reassign(clan, target);
+                    RecordAssignment(clan, target);
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.Error("  Error distributing follower '" + clan.Name + "': " + ex.Message);
+                    if (!safeFallback)
+                        throw;
+                }
+            }
+        }
+
+        // -----------------------------------------------------------------------
+        // Assignment tracking
+        // -----------------------------------------------------------------------
+
+        private void RecordAssignment(Clan clan, Kingdom kingdom)
+        {
+            if (clan?.StringId != null && kingdom?.StringId != null)
+                ClanKingdomAssignments[clan.StringId] = kingdom.StringId;
         }
 
         // -----------------------------------------------------------------------
