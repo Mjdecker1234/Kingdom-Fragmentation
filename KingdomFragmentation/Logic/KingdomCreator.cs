@@ -50,21 +50,40 @@ namespace KingdomFragmentation.Logic
                 "  KingdomCreator: creating kingdom '" + kingdomName + "' (id=" + kingdomId + ") "
                 + "for clan '" + clan.Name + "'.");
 
-            var kingdom = MBObjectManager.Instance.CreateObject<Kingdom>(kingdomId);
+            Kingdom? kingdom = null;
+            try
+            {
+                kingdom = MBObjectManager.Instance.CreateObject<Kingdom>(kingdomId);
+            }
+            catch (System.Exception ex)
+            {
+                LogHelper.Error("  MBObjectManager threw creating Kingdom '"
+                    + kingdomId + "': " + ex.Message);
+                return null;
+            }
+
             if (kingdom == null)
             {
                 LogHelper.Error("  MBObjectManager failed to create Kingdom '" + kingdomId + "'.");
                 return null;
             }
 
-            kingdom.InitializeKingdom(
-                new TextObject(kingdomName),
-                new TextObject(informalName),
-                culture,
-                banner,
-                primaryColor,
-                secondaryColor,
-                clan.Leader);
+            try
+            {
+                kingdom.InitializeKingdom(
+                    new TextObject(kingdomName),
+                    new TextObject(informalName),
+                    culture,
+                    banner,
+                    primaryColor,
+                    secondaryColor,
+                    clan.Leader);
+            }
+            catch (System.Exception ex)
+            {
+                LogHelper.Error("  InitializeKingdom failed for '" + kingdomId + "': " + ex.Message);
+                return null;
+            }
 
             // Move the clan into the new kingdom
             ChangeKingdomAction.ApplyByJoinToKingdom(clan, kingdom, showNotification: false);
@@ -149,14 +168,24 @@ namespace KingdomFragmentation.Logic
                     return Banner.CreateRandomBanner();
 
                 case "CultureBased":
-                    // Derive from culture colours using the clan's own banner as fallback
-                    if (clan.Culture != null)
+                    // Derive from culture colours; use the clan's existing banner as
+                    // the structural template and apply culture colours on top.
+                    if (clan.Culture != null && clan.Banner != null)
                     {
-                        return new Banner(
-                            clan.Banner?.BannerDataList?.FirstOrDefault()?.MeshId.ToString()
-                                ?? Banner.CreateRandomBanner().Serialize(),
-                            clan.Culture.Color,
-                            clan.Culture.Color2);
+                        try
+                        {
+                            string serialized = clan.Banner.Serialize();
+                            if (!string.IsNullOrEmpty(serialized))
+                            {
+                                return new Banner(serialized,
+                                    clan.Culture.Color,
+                                    clan.Culture.Color2);
+                            }
+                        }
+                        catch (System.Exception ex)
+                        {
+                            LogHelper.Warn("  Banner CultureBased fallback: " + ex.Message);
+                        }
                     }
                     return clan.Banner ?? Banner.CreateRandomBanner();
 

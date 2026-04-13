@@ -11,11 +11,13 @@ independent kingdoms — one per clan — on new-campaign creation.
 | Area | What the mod does |
 |------|-------------------|
 | **Fragmentation** | Every eligible clan becomes its own independent kingdom at campaign start |
+| **Target Kingdom Count** | Set a specific number of kingdoms to generate — best clans become leaders, rest are distributed |
 | **MCM settings** | Full Mod Configuration Menu with 6 categories and safe defaults |
 | **Diplomacy** | Configurable starting state: all-peace, all-war, or rivalry-based |
 | **Ownership** | Clan settlements are preserved under the new kingdom |
-| **Stability** | Starting treasury, influence, and anti-collapse protection |
-| **Compatibility** | New campaigns only; save/load safe; error-safe fallback |
+| **Clan Loyalty** | Active enforcement prevents clans from defecting back during lockout period |
+| **Stability** | Starting treasury, influence, anti-collapse protection, and truce enforcement |
+| **Compatibility** | Works in Sandbox and Story Mode; save/load safe; error-safe fallback |
 
 ---
 
@@ -116,6 +118,7 @@ The compiled `KingdomFragmentation.dll` will appear in
 | Fragmentation Scope | Include Mercenaries | off | |
 | Fragmentation Scope | Include Rebel Clans | off | |
 | Fragmentation Scope | Minimum Clan Tier | 1 | |
+| Kingdom Creation | Target Kingdom Count | 0 | 0 = one per clan; >0 = generate exactly N kingdoms |
 | Kingdom Creation | One Clan = One Kingdom | on | Recommended mode |
 | Kingdom Creation | Preserve Culture | on | |
 | Kingdom Creation | Naming Mode | ClanBased | ClanBased / SettlementBased / CultureBased |
@@ -123,13 +126,13 @@ The compiled `KingdomFragmentation.dll` will appear in
 | Kingdom Creation | Banner Mode | KeepClan | KeepClan / Randomize / CultureBased |
 | Diplomacy | Starting State | AllPeace | AllPeace / AllWar / RivalryBased |
 | Diplomacy | Starting Truce (days) | 0 | |
-| Diplomacy | Join Grace Period (days) | 30 | |
-| Diplomacy | Defection Lockout (days) | 60 | |
+| Diplomacy | Join Grace Period (days) | 30 | Enforced — clans forced to stay |
+| Diplomacy | Defection Lockout (days) | 60 | Enforced — prevents reunification |
 | Ownership | Preserve Settlement Ownership | on | |
 | Ownership | Skip Landless Clans | off | |
 | Stability | Starting Treasury | 50 000 | Gold per new kingdom leader |
 | Stability | Starting Influence | 200 | |
-| Stability | Anti-Collapse Protection (days) | 14 | |
+| Stability | Anti-Collapse Protection (days) | 14 | Enforced — revives collapsed kingdoms |
 | Compatibility | New Campaigns Only | on | |
 | Compatibility | Debug Logging | off | |
 | Compatibility | Dry-Run Mode | off | |
@@ -145,10 +148,13 @@ The compiled `KingdomFragmentation.dll` will appear in
   If MCM is absent, the behavior catches the missing-instance case and uses
   compiled-in defaults so the game still starts without crashing.  For the
   best experience, install MCM v5.x.
-* **Advisory settings** — `JoinGracePeriodDays`, `DefectionLockoutDays`,
-  `AntiCollapseProtectionDays`, and `DisableDiplomacyDays` are logged at campaign
-  start as intent, but full AI interception requires an optional Harmony patch
-  (not bundled).  `StartingTruceDays` is fully enforced via a daily-tick handler.
+* **Active enforcement** — `DefectionLockoutDays`, `JoinGracePeriodDays`, and
+  `AntiCollapseProtectionDays` are now actively enforced via a daily-tick handler
+  that monitors clan assignments and forces defecting clans back to their assigned
+  kingdoms.  `StartingTruceDays` is also enforced via daily tick.  The player's
+  clan is always exempt from loyalty enforcement.
+  `DisableDiplomacyDays` remains advisory-only and requires an optional Harmony
+  patch for full AI interception.
 * **Sandbox / story mode** — Both are supported; the trigger fires after the
   initial world setup in either mode.
 * **Other mods** — Mods that also alter kingdom/clan structure at campaign start

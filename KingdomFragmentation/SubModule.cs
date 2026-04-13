@@ -8,7 +8,9 @@ namespace KingdomFragmentation
 {
     /// <summary>
     /// Bannerlord sub-module entry point for Kingdom Fragmentation.
-    /// Registers the <see cref="KingdomFragmentationBehavior"/> into every new campaign.
+    /// Registers the <see cref="KingdomFragmentationBehavior"/> into every campaign
+    /// (new game and loaded save) so that events are wired before the campaign
+    /// system invokes <c>RegisterEvents</c> on all behaviours.
     /// </summary>
     public sealed class SubModule : MBSubModuleBase
     {
@@ -28,26 +30,31 @@ namespace KingdomFragmentation
             LogHelper.Info("Kingdom Fragmentation: main menu ready.");
         }
 
+        /// <summary>
+        /// Called for every campaign start — both new games and loaded saves.
+        /// We register the behaviour here (not inside an event callback) so that
+        /// <see cref="KingdomFragmentationBehavior.RegisterEvents"/> is invoked
+        /// during the normal campaign-system initialisation pass, guaranteeing
+        /// that <c>OnNewGameCreatedPartialFollowUpEndEvent</c> fires correctly
+        /// for Sandbox and Story Mode alike.
+        /// </summary>
         public override void OnCampaignStart(Game game, object starterObject)
         {
             base.OnCampaignStart(game, starterObject);
 
             if (game.GameType is Campaign)
             {
-                LogHelper.Info("Kingdom Fragmentation: registering campaign behavior.");
-                CampaignEvents.OnNewGameCreatedEvent.AddNonSerializedListener(
-                    this,
-                    new System.Action<CampaignGameStarter>(OnNewGameCreated));
+                var starter = starterObject as CampaignGameStarter;
+                if (starter != null)
+                {
+                    LogHelper.Info("Kingdom Fragmentation: adding campaign behavior.");
+                    starter.AddBehavior(new KingdomFragmentationBehavior());
+                }
+                else
+                {
+                    LogHelper.Warn("Kingdom Fragmentation: could not obtain CampaignGameStarter.");
+                }
             }
-        }
-
-        // -----------------------------------------------------------------------
-        // Internal helpers
-        // -----------------------------------------------------------------------
-
-        private static void OnNewGameCreated(CampaignGameStarter starter)
-        {
-            starter.AddBehavior(new KingdomFragmentationBehavior());
         }
     }
 }
