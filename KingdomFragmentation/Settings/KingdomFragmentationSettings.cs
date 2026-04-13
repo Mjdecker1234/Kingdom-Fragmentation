@@ -121,7 +121,8 @@ namespace KingdomFragmentation.Settings
             0, 200,
             RequireRestart = false,
             HintText = "How many kingdoms to generate. 0 = one kingdom per eligible clan (default). "
-                     + "When > 0, the best N clans become kingdom leaders and remaining clans are distributed among them.")]
+                     + "When > 0, the best N clans become kingdom leaders and remaining clans are distributed among them. "
+                     + "Takes precedence over 'One Clan = One Kingdom' when set.")]
         public int TargetKingdomCount
         {
             get => _targetKingdomCount;
@@ -281,7 +282,8 @@ namespace KingdomFragmentation.Settings
             0, 365,
             RequireRestart = false,
             HintText = "Clans cannot join other kingdoms for this many days after fragmentation. "
-                     + "Enforced via daily clan loyalty check. The player's clan is exempt.")]
+                     + "Enforced via daily clan loyalty check (uses the longer of this and Defection Lockout). "
+                     + "The player's clan is exempt.")]
         public int JoinGracePeriodDays
         {
             get => _joinGracePeriodDays;

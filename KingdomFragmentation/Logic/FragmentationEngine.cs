@@ -82,6 +82,13 @@ namespace KingdomFragmentation.Logic
 
             if (targetCount > 0)
             {
+                // TargetKingdomCount takes precedence over OneClanOneKingdom
+                if (oneClanOneKingdom)
+                {
+                    LogHelper.Info("TargetKingdomCount (" + targetCount
+                        + ") overrides 'One Clan = One Kingdom' — clans will be grouped.");
+                }
+
                 // Sort by suitability: higher tier first, then clans with fiefs first
                 var sorted = eligibleClans
                     .OrderByDescending(c => c.Tier)

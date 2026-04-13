@@ -173,12 +173,14 @@ namespace KingdomFragmentation.Behaviors
                 EnforceTruceBetweenFragmentedKingdoms();
             }
 
-            // ---- Clan loyalty (DefectionLockoutDays) ------------------------
+            // ---- Clan loyalty (JoinGracePeriodDays / DefectionLockoutDays) --
             // Prevent clans from leaving their KF-assigned kingdoms during the
-            // lockout window.  This is the active enforcement that keeps the
-            // fragmented map intact instead of collapsing back immediately.
-            int defectionDays = settings.DefectionLockoutDays;
-            if (defectionDays > 0 && daysSince < defectionDays)
+            // active loyalty-enforcement window. This is the enforcement that
+            // keeps the fragmented map intact instead of collapsing back
+            // immediately, and it should remain active for whichever configured
+            // loyalty period is longer.
+            int loyaltyEnforcementDays = Math.Max(settings.JoinGracePeriodDays, settings.DefectionLockoutDays);
+            if (loyaltyEnforcementDays > 0 && daysSince < loyaltyEnforcementDays)
             {
                 EnforceClanLoyalty();
             }
@@ -237,11 +239,26 @@ namespace KingdomFragmentation.Behaviors
         /// <summary>
         /// Checks every assigned clan and forces it back into its KF kingdom if
         /// it has defected.  Skips the player's clan to avoid overriding player
-        /// choice.
+        /// choice.  Builds lookup dictionaries once per tick to avoid O(N²) scans.
         /// </summary>
         private void EnforceClanLoyalty()
         {
             if (_assignedClanIds.Count == 0) return;
+
+            // Build lookup dictionaries once per tick instead of O(N) scans per assignment
+            var clanById = new Dictionary<string, Clan>();
+            foreach (var c in Clan.All)
+            {
+                if (c != null && c.StringId != null && !c.IsEliminated)
+                    clanById[c.StringId] = c;
+            }
+
+            var kingdomById = new Dictionary<string, Kingdom>();
+            foreach (var k in Kingdom.All)
+            {
+                if (k != null && k.StringId != null && !k.IsEliminated)
+                    kingdomById[k.StringId] = k;
+            }
 
             int assignmentCount = Math.Min(_assignedClanIds.Count, _assignedKingdomIds.Count);
             for (int i = 0; i < assignmentCount; i++)
@@ -253,16 +270,12 @@ namespace KingdomFragmentation.Behaviors
                     if (string.IsNullOrEmpty(clanId) || string.IsNullOrEmpty(kingdomId))
                         continue;
 
-                    var clan = Clan.All.FirstOrDefault(
-                        c => c.StringId == clanId && !c.IsEliminated);
-                    if (clan == null) continue;
+                    if (!clanById.TryGetValue(clanId, out var clan)) continue;
 
                     // Never override the player's choice
                     if (clan == Clan.PlayerClan) continue;
 
-                    var assignedKingdom = Kingdom.All.FirstOrDefault(
-                        k => k.StringId == kingdomId && !k.IsEliminated);
-                    if (assignedKingdom == null) continue;
+                    if (!kingdomById.TryGetValue(kingdomId, out var assignedKingdom)) continue;
 
                     // If clan is no longer in its assigned kingdom, move it back
                     if (clan.Kingdom != assignedKingdom)
@@ -297,7 +310,7 @@ namespace KingdomFragmentation.Behaviors
             {
                 try
                 {
-                    var kingdom = Kingdom.All.FirstOrDefault(k => k.StringId == kingdomId);
+                    var kingdom = Kingdom.All.FirstOrDefault(k => k != null && k.StringId == kingdomId);
                     if (kingdom == null) continue;
 
                     // If the kingdom still has active clans, it's fine
@@ -311,7 +324,7 @@ namespace KingdomFragmentation.Behaviors
                         if (_assignedKingdomIds[i] != kingdomId) continue;
 
                         var clan = Clan.All.FirstOrDefault(
-                            c => c.StringId == _assignedClanIds[i] && !c.IsEliminated);
+                            c => c != null && c.StringId == _assignedClanIds[i] && !c.IsEliminated);
                         if (clan == null || clan == Clan.PlayerClan) continue;
 
                         LogHelper.Debug("Anti-collapse: moving '"
