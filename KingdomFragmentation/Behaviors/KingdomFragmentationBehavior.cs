@@ -11,30 +11,17 @@ namespace KingdomFragmentation.Behaviors
 {
     /// <summary>
     /// Campaign behavior that triggers kingdom fragmentation exactly once on a new
-    /// campaign and then actively enforces the resulting structure (truces, clan
-    /// loyalty, anti-collapse) through the daily tick for the configured period.
+    /// campaign and then enforces truces and clan loyalty through the daily tick.
     /// </summary>
     public sealed class KingdomFragmentationBehavior : CampaignBehaviorBase
     {
         // -----------------------------------------------------------------------
-        // State — serialised into every save so each flag survives load/reload
+        // State — serialised into every save
         // -----------------------------------------------------------------------
 
-        /// <summary>Set to true after fragmentation runs; prevents re-triggering on load.</summary>
         private bool _fragmentationApplied = false;
-
-        /// <summary>
-        /// Campaign day number when fragmentation completed.
-        /// Used for time-gated enforcement (truce, grace periods, etc.).
-        /// -1 means fragmentation has not yet run.
-        /// </summary>
         private float _fragmentationCampaignDay = -1f;
-
-        /// <summary>
-        /// Parallel lists that together form the clan → KF-kingdom assignment map.
-        /// Persisted into saves so enforcement survives reload.
-        /// </summary>
-        private List<string> _assignedClanIds    = new List<string>();
+        private List<string> _assignedClanIds = new List<string>();
         private List<string> _assignedKingdomIds = new List<string>();
 
         // -----------------------------------------------------------------------
@@ -43,12 +30,16 @@ namespace KingdomFragmentation.Behaviors
 
         public override void RegisterEvents()
         {
-            // Fires after all partial follow-ups on NEW campaign creation.
+            LogHelper.Info("RegisterEvents called — wiring campaign event listeners.");
+
             CampaignEvents.OnNewGameCreatedPartialFollowUpEndEvent.AddNonSerializedListener(
                 this,
                 new Action<CampaignGameStarter>(OnNewGameCreatedPartialFollowUpEnd));
 
-            // Daily tick: enforces truces, clan loyalty, and anti-collapse.
+            CampaignEvents.OnGameLoadFinishedEvent.AddNonSerializedListener(
+                this,
+                new Action(OnGameLoadFinished));
+
             CampaignEvents.DailyTickEvent.AddNonSerializedListener(
                 this,
                 new Action(OnDailyTick));
@@ -56,160 +47,122 @@ namespace KingdomFragmentation.Behaviors
 
         public override void SyncData(IDataStore dataStore)
         {
-            dataStore.SyncData("KF_FragmentationApplied",    ref _fragmentationApplied);
+            dataStore.SyncData("KF_FragmentationApplied", ref _fragmentationApplied);
             dataStore.SyncData("KF_FragmentationCampaignDay", ref _fragmentationCampaignDay);
-            dataStore.SyncData("KF_AssignedClanIds",          ref _assignedClanIds);
-            dataStore.SyncData("KF_AssignedKingdomIds",       ref _assignedKingdomIds);
+            dataStore.SyncData("KF_AssignedClanIds", ref _assignedClanIds);
+            dataStore.SyncData("KF_AssignedKingdomIds", ref _assignedKingdomIds);
 
-            // Guard against null after deserialization
             if (_assignedClanIds == null) _assignedClanIds = new List<string>();
             if (_assignedKingdomIds == null) _assignedKingdomIds = new List<string>();
         }
 
         // -----------------------------------------------------------------------
-        // New-game handler
+        // Event handlers
         // -----------------------------------------------------------------------
 
         private void OnNewGameCreatedPartialFollowUpEnd(CampaignGameStarter starter)
         {
+            LogHelper.Info("OnNewGameCreatedPartialFollowUpEndEvent fired.");
+            TryRunFragmentation("OnNewGameCreatedPartialFollowUpEnd");
+        }
+
+        private void OnGameLoadFinished()
+        {
+            LogHelper.Info("OnGameLoadFinishedEvent fired.");
+            var settings = KingdomFragmentationSettings.Instance;
+            if (settings != null && settings.NewCampaignsOnly)
+            {
+                LogHelper.Info("NewCampaignsOnly = true and this is a loaded save. Skipping.");
+                return;
+            }
+            TryRunFragmentation("OnGameLoadFinished");
+        }
+
+        private void TryRunFragmentation(string trigger)
+        {
             var settings = KingdomFragmentationSettings.Instance;
 
             if (settings == null)
-            {
-                LogHelper.Warn("KingdomFragmentationSettings not available — using defaults.");
-            }
+                LogHelper.Warn("Settings not available — using defaults.");
 
             if (settings != null && !settings.EnableFragmentation)
             {
-                LogHelper.Info("Kingdom Fragmentation is disabled in MCM settings. Skipping.");
+                LogHelper.Info("Kingdom Fragmentation disabled in MCM. Skipping.");
                 return;
-            }
-
-            if (settings != null && settings.NewCampaignsOnly)
-            {
-                LogHelper.Info("NewCampaignsOnly = true: fragmentation will run on this new campaign.");
             }
 
             if (_fragmentationApplied)
             {
-                LogHelper.Info("Fragmentation already applied for this campaign. Skipping.");
+                LogHelper.Info("Fragmentation already applied. Skipping.");
                 return;
             }
 
-            LogHelper.Info("Kingdom Fragmentation: starting fragmentation process.");
-
-            bool isDryRun = settings?.DryRunMode ?? false;
-            if (isDryRun)
-            {
-                LogHelper.Info("[DRY RUN] No actual changes will be made.");
-            }
-
-            // Log advisory-only settings that need Harmony patches for full enforcement
-            LogAdvisorySettings(settings);
+            LogHelper.Info("Starting fragmentation (trigger: " + trigger + ").");
 
             try
             {
                 var engine = new FragmentationEngine(settings);
-                engine.Run(isDryRun);
+                engine.Run();
 
-                if (!isDryRun)
+                _fragmentationApplied = true;
+                _fragmentationCampaignDay = (float)CampaignTime.Now.ToDays;
+
+                // Persist assignments for enforcement
+                _assignedClanIds.Clear();
+                _assignedKingdomIds.Clear();
+                foreach (var kvp in engine.ClanKingdomAssignments)
                 {
-                    _fragmentationApplied    = true;
-                    _fragmentationCampaignDay = (float)CampaignTime.Now.ToDays;
-
-                    // Persist the clan → kingdom assignments for enforcement
-                    _assignedClanIds.Clear();
-                    _assignedKingdomIds.Clear();
-                    foreach (var kvp in engine.ClanKingdomAssignments)
-                    {
-                        _assignedClanIds.Add(kvp.Key);
-                        _assignedKingdomIds.Add(kvp.Value);
-                    }
-
-                    LogHelper.Info("Kingdom Fragmentation: process complete on campaign day "
-                        + _fragmentationCampaignDay + ". "
-                        + _assignedClanIds.Count + " clan assignment(s) recorded.");
+                    _assignedClanIds.Add(kvp.Key);
+                    _assignedKingdomIds.Add(kvp.Value);
                 }
-                else
-                {
-                    LogHelper.Info("[DRY RUN] Fragmentation simulation complete. See log for details.");
-                }
+
+                LogHelper.Info("Fragmentation complete on day "
+                    + _fragmentationCampaignDay + ". "
+                    + _assignedClanIds.Count + " assignment(s) recorded.");
             }
             catch (Exception ex)
             {
-                bool safeFallback = settings?.ErrorSafeFallback ?? true;
-                LogHelper.Error("Kingdom Fragmentation encountered an error: " + ex.Message);
-                if (safeFallback)
-                {
-                    LogHelper.Warn("Error-safe fallback active — partial changes may have been applied.");
-                }
-                else
-                {
-                    throw;
-                }
+                LogHelper.Error("Fragmentation error: " + ex.Message);
+                LogHelper.Warn("Partial changes may have been applied.");
             }
         }
 
         // -----------------------------------------------------------------------
-        // Daily tick — time-gated enforcement
+        // Daily tick — truce + defection enforcement
         // -----------------------------------------------------------------------
 
         private void OnDailyTick()
         {
-            if (!_fragmentationApplied) return;
-            if (_fragmentationCampaignDay < 0f) return;
+            if (!_fragmentationApplied || _fragmentationCampaignDay < 0f)
+                return;
 
             var settings = KingdomFragmentationSettings.Instance;
             if (settings == null) return;
 
             float daysSince = (float)CampaignTime.Now.ToDays - _fragmentationCampaignDay;
 
-            // ---- StartingTruceDays ------------------------------------------
+            // Truce enforcement
             int truceDays = settings.StartingTruceDays;
-            string diplomacyMode = settings.DiplomacyMode?.SelectedValue ?? "AllPeace";
+            if (truceDays > 0 && daysSince < truceDays)
+                EnforceTruce();
 
-            if (truceDays > 0 && daysSince < truceDays && diplomacyMode != "AllWar")
-            {
-                EnforceTruceBetweenFragmentedKingdoms();
-            }
-
-            // ---- Clan loyalty (JoinGracePeriodDays / DefectionLockoutDays) --
-            // Prevent clans from leaving their KF-assigned kingdoms during the
-            // active loyalty-enforcement window. This is the enforcement that
-            // keeps the fragmented map intact instead of collapsing back
-            // immediately, and it should remain active for whichever configured
-            // loyalty period is longer.
-            int loyaltyEnforcementDays = Math.Max(settings.JoinGracePeriodDays, settings.DefectionLockoutDays);
-            if (loyaltyEnforcementDays > 0 && daysSince < loyaltyEnforcementDays)
-            {
+            // Defection lockout
+            int lockoutDays = settings.DefectionLockoutDays;
+            if (lockoutDays > 0 && daysSince < lockoutDays)
                 EnforceClanLoyalty();
-            }
-
-            // ---- Anti-collapse protection -----------------------------------
-            // During the protection window, if a KF-kingdom has been reduced to
-            // zero clans (eliminated), attempt to revive it by moving the
-            // original ruling clan back.
-            int antiCollapseDays = settings.AntiCollapseProtectionDays;
-            if (antiCollapseDays > 0 && daysSince < antiCollapseDays)
-            {
-                EnforceAntiCollapse();
-            }
         }
 
-        /// <summary>
-        /// Ensures no two KF-created kingdoms are at war during the truce window.
-        /// </summary>
-        private static void EnforceTruceBetweenFragmentedKingdoms()
+        // -----------------------------------------------------------------------
+        // Enforcement
+        // -----------------------------------------------------------------------
+
+        private static void EnforceTruce()
         {
             var kfKingdoms = Kingdom.All
-                .Where(k => k != null
-                          && !k.IsEliminated
-                          && k.StringId != null
-                          && k.StringId.StartsWith("kf_",
-                             StringComparison.OrdinalIgnoreCase))
+                .Where(k => k != null && !k.IsEliminated
+                    && k.StringId != null
+                    && k.StringId.StartsWith("kf_", StringComparison.OrdinalIgnoreCase))
                 .ToArray();
-
-            if (kfKingdoms.Length == 0) return;
 
             for (int i = 0; i < kfKingdoms.Length; i++)
             {
@@ -217,35 +170,27 @@ namespace KingdomFragmentation.Behaviors
                 {
                     var a = kfKingdoms[i];
                     var b = kfKingdoms[j];
-
                     if (FactionManager.IsAtWarAgainstFaction(a, b))
                     {
                         try
                         {
-                            MakePeaceAction.Apply(a, b, showNotification: false);
-                            LogHelper.Debug("Truce enforcement: peace applied between '"
+                            MakePeaceAction.Apply(a, b);
+                            LogHelper.Debug("Truce: peace between '"
                                 + a.Name + "' and '" + b.Name + "'.");
                         }
                         catch (Exception ex)
                         {
-                            LogHelper.Warn("Truce enforcement failed between '"
-                                + a.Name + "' and '" + b.Name + "': " + ex.Message);
+                            LogHelper.Warn("Truce failed: " + ex.Message);
                         }
                     }
                 }
             }
         }
 
-        /// <summary>
-        /// Checks every assigned clan and forces it back into its KF kingdom if
-        /// it has defected.  Skips the player's clan to avoid overriding player
-        /// choice.  Builds lookup dictionaries once per tick to avoid O(N²) scans.
-        /// </summary>
         private void EnforceClanLoyalty()
         {
             if (_assignedClanIds.Count == 0) return;
 
-            // Build lookup dictionaries once per tick instead of O(N) scans per assignment
             var clanById = new Dictionary<string, Clan>();
             foreach (var c in Clan.All)
             {
@@ -260,110 +205,40 @@ namespace KingdomFragmentation.Behaviors
                     kingdomById[k.StringId] = k;
             }
 
-            int assignmentCount = Math.Min(_assignedClanIds.Count, _assignedKingdomIds.Count);
-            for (int i = 0; i < assignmentCount; i++)
+            int count = Math.Min(_assignedClanIds.Count, _assignedKingdomIds.Count);
+            for (int i = 0; i < count; i++)
             {
                 try
                 {
-                    string clanId    = _assignedClanIds[i];
+                    string clanId = _assignedClanIds[i];
                     string kingdomId = _assignedKingdomIds[i];
                     if (string.IsNullOrEmpty(clanId) || string.IsNullOrEmpty(kingdomId))
                         continue;
 
                     if (!clanById.TryGetValue(clanId, out var clan)) continue;
-
-                    // Never override the player's choice
                     if (clan == Clan.PlayerClan) continue;
+                    if (!kingdomById.TryGetValue(kingdomId, out var kingdom)) continue;
 
-                    if (!kingdomById.TryGetValue(kingdomId, out var assignedKingdom)) continue;
-
-                    // If clan is no longer in its assigned kingdom, move it back
-                    if (clan.Kingdom != assignedKingdom)
+                    if (clan.Kingdom != kingdom)
                     {
-                        LogHelper.Debug("Loyalty enforcement: returning '"
-                            + clan.Name + "' to '" + assignedKingdom.Name + "'.");
-                        ChangeKingdomAction.ApplyByJoinToKingdom(
-                            clan, assignedKingdom, showNotification: false);
+                        LogHelper.Debug("Loyalty: returning '" + clan.Name
+                            + "' to '" + kingdom.Name + "'.");
+                        try
+                        {
+                            ChangeKingdomAction.ApplyByJoinToKingdom(
+                                clan, kingdom, CampaignTime.Now, false);
+                        }
+                        catch
+                        {
+                            clan.Kingdom = kingdom;
+                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    LogHelper.Warn("Clan loyalty enforcement error at index "
-                        + i + ": " + ex.Message);
+                    LogHelper.Warn("Loyalty enforcement error: " + ex.Message);
                 }
             }
-        }
-
-        /// <summary>
-        /// If a KF-kingdom has lost all its clans / been eliminated, attempt
-        /// to move its original ruling clan back to restore it.
-        /// </summary>
-        private void EnforceAntiCollapse()
-        {
-            if (_assignedClanIds.Count == 0) return;
-
-            // Build set of KF-kingdom IDs that should exist
-            var expectedKingdomIds = new HashSet<string>(
-                _assignedKingdomIds.Where(id => !string.IsNullOrEmpty(id)));
-
-            foreach (var kingdomId in expectedKingdomIds)
-            {
-                try
-                {
-                    var kingdom = Kingdom.All.FirstOrDefault(k => k != null && k.StringId == kingdomId);
-                    if (kingdom == null) continue;
-
-                    // If the kingdom still has active clans, it's fine
-                    if (!kingdom.IsEliminated && kingdom.Clans.Count > 0)
-                        continue;
-
-                    // Find the first assigned clan that should be in this kingdom
-                    int assignmentCount = Math.Min(_assignedClanIds.Count, _assignedKingdomIds.Count);
-                    for (int i = 0; i < assignmentCount; i++)
-                    {
-                        if (_assignedKingdomIds[i] != kingdomId) continue;
-
-                        var clan = Clan.All.FirstOrDefault(
-                            c => c != null && c.StringId == _assignedClanIds[i] && !c.IsEliminated);
-                        if (clan == null || clan == Clan.PlayerClan) continue;
-
-                        LogHelper.Debug("Anti-collapse: moving '"
-                            + clan.Name + "' back into '" + kingdom.Name + "'.");
-                        ChangeKingdomAction.ApplyByJoinToKingdom(
-                            clan, kingdom, showNotification: false);
-                        break; // One clan is enough to revive the kingdom
-                    }
-                }
-                catch (Exception ex)
-                {
-                    LogHelper.Warn("Anti-collapse error for kingdom '" + kingdomId + "': " + ex.Message);
-                }
-            }
-        }
-
-        // -----------------------------------------------------------------------
-        // Helpers
-        // -----------------------------------------------------------------------
-
-        private static void LogAdvisorySettings(KingdomFragmentationSettings? settings)
-        {
-            if (settings == null) return;
-
-            if (settings.JoinGracePeriodDays > 0)
-                LogHelper.Info("JoinGracePeriodDays = " + settings.JoinGracePeriodDays
-                    + " — will be enforced via daily clan loyalty check.");
-
-            if (settings.DefectionLockoutDays > 0)
-                LogHelper.Info("DefectionLockoutDays = " + settings.DefectionLockoutDays
-                    + " — will be enforced via daily clan loyalty check.");
-
-            if (settings.AntiCollapseProtectionDays > 0)
-                LogHelper.Info("AntiCollapseProtectionDays = " + settings.AntiCollapseProtectionDays
-                    + " — will be enforced via daily anti-collapse check.");
-
-            if (settings.DisableDiplomacyDays > 0)
-                LogHelper.Info("DisableDiplomacyDays = " + settings.DisableDiplomacyDays
-                    + " (advisory — full enforcement requires an optional Harmony patch)");
         }
     }
 }

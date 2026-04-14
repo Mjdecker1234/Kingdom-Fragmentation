@@ -1,16 +1,17 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using KingdomFragmentation.Helpers;
 using KingdomFragmentation.Settings;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Actions;
+using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
+using TaleWorlds.Localization;
 using TaleWorlds.ObjectSystem;
 
 namespace KingdomFragmentation.Logic
 {
-    /// <summary>
-    /// Responsible for creating a new <see cref="Kingdom"/> for a given <see cref="Clan"/>
-    /// and moving the clan into that kingdom.
-    /// </summary>
     public sealed class KingdomCreator
     {
         private readonly KingdomFragmentationSettings? _settings;
@@ -21,15 +22,9 @@ namespace KingdomFragmentation.Logic
             _settings = settings;
         }
 
-        // -----------------------------------------------------------------------
-        // Public API
-        // -----------------------------------------------------------------------
-
         /// <summary>
-        /// Creates a new independent kingdom for <paramref name="clan"/> and moves
-        /// the clan into it.
+        /// Creates a new kingdom for <paramref name="clan"/> and moves the clan into it.
         /// </summary>
-        /// <returns>The newly created kingdom, or <c>null</c> on failure.</returns>
         public Kingdom? CreateForClan(Clan clan)
         {
             if (clan?.Leader == null)
@@ -38,177 +33,196 @@ namespace KingdomFragmentation.Logic
                 return null;
             }
 
+            // Find a settlement anchor for InitializeKingdom
+            var anchor = clan.Settlements
+                .FirstOrDefault(s => s != null && (s.IsTown || s.IsCastle))
+                ?? clan.Settlements.FirstOrDefault(s => s != null)
+                ?? Settlement.All.FirstOrDefault(s => s != null && s.IsTown);
+
+            if (anchor == null)
+            {
+                LogHelper.Warn("KingdomCreator: No settlement anchor found for clan '"
+                    + clan.Name + "'.");
+                return null;
+            }
+
             string kingdomId = BuildKingdomId(clan);
-            var (kingdomName, informalName) = BuildKingdomNames(clan);
-            var culture = ResolveCulture(clan);
-            var banner  = ResolveBanner(clan);
+            var (name, informal) = BuildKingdomNames(clan, anchor);
+            var culture = clan.Culture ?? clan.Kingdom?.Culture;
+            var banner = Banner.CreateRandomBanner();
+            var (color1, color2) = ResolveColors(clan, kingdomId);
 
-            uint primaryColor   = clan.Color;
-            uint secondaryColor = clan.Color2;
+            LogHelper.Debug("KingdomCreator: creating '" + name + "' (id=" + kingdomId
+                + ") for clan '" + clan.Name + "'.");
 
-            LogHelper.Debug(
-                "  KingdomCreator: creating kingdom '" + kingdomName + "' (id=" + kingdomId + ") "
-                + "for clan '" + clan.Name + "'.");
-
-            Kingdom? kingdom = null;
+            // Create the kingdom object
+            Kingdom? kingdom;
             try
             {
                 kingdom = MBObjectManager.Instance.CreateObject<Kingdom>(kingdomId);
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-                LogHelper.Error("  MBObjectManager threw creating Kingdom '"
-                    + kingdomId + "': " + ex.Message);
+                LogHelper.Error("MBObjectManager threw creating '" + kingdomId + "': " + ex.Message);
                 return null;
             }
 
             if (kingdom == null)
             {
-                LogHelper.Error("  MBObjectManager failed to create Kingdom '" + kingdomId + "'.");
+                LogHelper.Error("MBObjectManager returned null for '" + kingdomId + "'.");
                 return null;
             }
 
+            // Initialize the kingdom
             try
             {
                 kingdom.InitializeKingdom(
-                    new TextObject(kingdomName),
-                    new TextObject(informalName),
+                    new TextObject(name),
+                    new TextObject(informal),
                     culture,
                     banner,
-                    primaryColor,
-                    secondaryColor,
-                    clan.Leader);
+                    color1,
+                    color2,
+                    anchor,
+                    new TextObject(""),
+                    new TextObject(""),
+                    new TextObject(""));
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-                LogHelper.Error("  InitializeKingdom failed for '" + kingdomId + "': " + ex.Message);
+                LogHelper.Error("InitializeKingdom failed for '" + kingdomId + "': " + ex.Message);
                 return null;
             }
 
-            // Move the clan into the new kingdom
-            ChangeKingdomAction.ApplyByJoinToKingdom(clan, kingdom, showNotification: false);
+            // Move clan into the kingdom — cascading fallback
+            bool moved = false;
 
-            ApplyStartingResources(clan, kingdom);
+            try
+            {
+                ChangeKingdomAction.ApplyByCreateKingdom(clan, kingdom, false);
+                moved = clan.Kingdom == kingdom;
+            }
+            catch (Exception ex)
+            {
+                LogHelper.Warn("ApplyByCreateKingdom failed: " + ex.Message + " — trying join.");
+            }
 
-            LogHelper.Info("  Created kingdom '" + kingdomName + "' led by '" + clan.Leader.Name + "'.");
+            if (!moved)
+            {
+                try
+                {
+                    ChangeKingdomAction.ApplyByJoinToKingdom(clan, kingdom, CampaignTime.Now, false);
+                    moved = clan.Kingdom == kingdom;
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.Warn("ApplyByJoinToKingdom failed: " + ex.Message + " — trying direct.");
+                }
+            }
+
+            if (!moved)
+            {
+                try
+                {
+                    clan.Kingdom = kingdom;
+                    if (kingdom.RulingClan == null)
+                        kingdom.RulingClan = clan;
+                    moved = clan.Kingdom == kingdom;
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.Error("Direct assignment failed: " + ex.Message);
+                }
+            }
+
+            if (!moved)
+            {
+                LogHelper.Error("Could not move clan '" + clan.Name
+                    + "' into kingdom '" + name + "' by any method.");
+                return null;
+            }
+
+            if (kingdom.RulingClan != clan)
+            {
+                try { kingdom.RulingClan = clan; } catch { }
+            }
+
+            LogHelper.Info("Created kingdom '" + name + "' led by '" + clan.Leader.Name + "'.");
             return kingdom;
         }
 
-        // -----------------------------------------------------------------------
+        // =====================================================================
         // Naming
-        // -----------------------------------------------------------------------
+        // =====================================================================
 
-        private (string name, string informalName) BuildKingdomNames(Clan clan)
+        private (string name, string informal) BuildKingdomNames(Clan clan, Settlement anchor)
         {
             string prefix = _settings?.KingdomNamePrefix ?? "Kingdom of ";
-            string suffix = _settings?.KingdomNameSuffix ?? "";
-            string mode   = _settings?.KingdomNamingMode?.SelectedValue ?? "ClanBased";
+            KingdomNamingModeOption mode = _settings?.KingdomNamingMode
+                ?? KingdomNamingModeOption.ClanBased;
 
             string baseName;
             switch (mode)
             {
-                case "SettlementBased":
-                    var primary = clan.Settlements
-                        .Where(s => s.IsTown || s.IsCastle)
-                        .OrderByDescending(s => s.IsTown)
-                        .FirstOrDefault();
-                    baseName = primary != null
-                        ? primary.Name.ToString()
-                        : clan.Name.ToString();
+                case KingdomNamingModeOption.SettlementBased:
+                    baseName = anchor.Name?.ToString() ?? clan.Name.ToString();
                     break;
-
-                case "CultureBased":
+                case KingdomNamingModeOption.CultureBased:
                     baseName = clan.Culture?.Name?.ToString() ?? clan.Name.ToString();
                     break;
-
-                default: // ClanBased
+                default:
                     baseName = clan.Name.ToString();
                     break;
             }
 
-            string fullName    = (prefix + baseName + suffix).Trim();
-            string informalStr = baseName.Trim();
-            return (fullName, informalStr);
+            return ((prefix + baseName).Trim(), baseName.Trim());
         }
 
-        // -----------------------------------------------------------------------
+        // =====================================================================
         // Helpers
-        // -----------------------------------------------------------------------
+        // =====================================================================
 
         private static string BuildKingdomId(Clan clan)
         {
             _idCounter++;
-            string safeName = (clan.StringId ?? clan.Name.ToString())
-                .Replace(" ", "_")
-                .ToLowerInvariant();
-            return "kf_" + safeName + "_" + _idCounter;
+            string safe = (clan.StringId ?? clan.Name.ToString())
+                .Replace(" ", "_").ToLowerInvariant();
+            return "kf_" + safe + "_" + _idCounter;
         }
 
-        private CultureObject? ResolveCulture(Clan clan)
+        private (uint, uint) ResolveColors(Clan clan, string kingdomId)
         {
-            bool preserveOriginalCulture = _settings?.PreserveCulture ?? true;
-            if (preserveOriginalCulture)
-            {
-                // clan.Kingdom is still the pre-fragmentation kingdom here because
-                // ChangeKingdomAction has not been called yet.
-                return clan.Kingdom?.Culture ?? clan.Culture;
-            }
+            BannerColorModeOption mode = _settings?.BannerColorMode
+                ?? BannerColorModeOption.UniquePerKingdom;
 
-            // When preservation is disabled, use the clan's own personal culture.
-            return clan.Culture ?? clan.Kingdom?.Culture;
+            if (mode == BannerColorModeOption.CultureBased && clan.Culture != null)
+                return (clan.Culture.Color, clan.Culture.Color2);
+
+            // Unique: seeded random
+            int seed = StableHash(kingdomId + "|" + (clan.StringId ?? ""));
+            return (RandomColor(seed, 0x31), RandomColor(seed, 0x7B));
         }
 
-        private Banner ResolveBanner(Clan clan)
+        private static int StableHash(string value)
         {
-            string mode = _settings?.BannerMode?.SelectedValue ?? "KeepClan";
-
-            switch (mode)
+            unchecked
             {
-                case "Randomize":
-                    return Banner.CreateRandomBanner();
-
-                case "CultureBased":
-                    // Derive from culture colours; use the clan's existing banner as
-                    // the structural template and apply culture colours on top.
-                    if (clan.Culture != null && clan.Banner != null)
-                    {
-                        try
-                        {
-                            string serialized = clan.Banner.Serialize();
-                            if (!string.IsNullOrEmpty(serialized))
-                            {
-                                return new Banner(serialized,
-                                    clan.Culture.Color,
-                                    clan.Culture.Color2);
-                            }
-                        }
-                        catch (System.Exception ex)
-                        {
-                            LogHelper.Warn("  Banner CultureBased fallback: " + ex.Message);
-                        }
-                    }
-                    return clan.Banner ?? Banner.CreateRandomBanner();
-
-                default: // KeepClan
-                    return clan.Banner ?? Banner.CreateRandomBanner();
+                int hash = 23;
+                for (int i = 0; i < value.Length; i++)
+                    hash = (hash * 31) + value[i];
+                return hash;
             }
         }
 
-        private void ApplyStartingResources(Clan clan, Kingdom kingdom)
+        private static uint RandomColor(int seed, int salt)
         {
-            int treasury  = _settings?.StartingTreasury  ?? 50000;
-            int influence = _settings?.StartingInfluence ?? 200;
-
-            if (treasury > 0 && clan.Leader != null)
+            unchecked
             {
-                clan.Leader.Gold += treasury;
-                LogHelper.Debug("  Applied treasury " + treasury + " to " + clan.Leader.Name);
-            }
-
-            if (influence > 0 && clan.Leader != null)
-            {
-                clan.Influence += influence;
-                LogHelper.Debug("  Applied influence " + influence + " to clan " + clan.Name);
+                var rng = new Random(seed ^ salt);
+                int r = rng.Next(48, 224);
+                int g = rng.Next(48, 224);
+                int b = rng.Next(48, 224);
+                return (uint)((255 << 24) | (r << 16) | (g << 8) | b);
             }
         }
     }

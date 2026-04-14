@@ -46,18 +46,17 @@
       <Private>false</Private>
     </Reference>
     <Reference Include="TaleWorlds.CampaignSystem">
-      <HintPath>$(BannerlordModulesDir)\SandBox\bin\Win64_Shipping_Client\TaleWorlds.CampaignSystem.dll</HintPath>
+      <HintPath>$(BannerlordBinDir)\TaleWorlds.CampaignSystem.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="TaleWorlds.Localization">
       <HintPath>$(BannerlordBinDir)\TaleWorlds.Localization.dll</HintPath>
       <Private>false</Private>
     </Reference>
-  </ItemGroup>
-
-  <!-- MCM (Mod Configuration Menu) — pulled from NuGet -->
-  <ItemGroup>
-    <PackageReference Include="Bannerlord.MCM.Impl.FluentBuilder" Version="5.*" />
+    <Reference Include="MCMv5">
+      <HintPath>$(BannerlordModulesDir)\Bannerlord.MBOptionScreen\bin\Win64_Shipping_Client\MCMv5.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <!-- Copy output to the mod's Modules directory after build (optional convenience target) -->

@@ -9,14 +9,26 @@
   <DefaultModule value="false" />
 
   <DependedModules>
-    <!-- Native must be loaded first -->
     <DependedModule Id="Native" />
     <DependedModule Id="SandBoxCore" />
     <DependedModule Id="Sandbox" />
-    <DependedModule Id="StoryMode" DependentVersion="e1.0.0" Optional="true" />
-    <!-- MCM is optional: the mod falls back to compiled-in defaults when absent -->
-    <DependedModule Id="MCM" DependentVersion="v5.0.0" Optional="true" />
+    <DependedModule Id="StoryMode" Optional="true" />
+    <DependedModule Id="Bannerlord.Harmony" Optional="false" />
+    <DependedModule Id="Bannerlord.ButterLib" Optional="false" />
+    <DependedModule Id="Bannerlord.UIExtenderEx" Optional="false" />
+    <DependedModule Id="Bannerlord.MBOptionScreen" Optional="false" />
   </DependedModules>
+
+  <DependedModuleMetadatas>
+    <DependedModuleMetadata id="Native" order="LoadBeforeThis" />
+    <DependedModuleMetadata id="SandBoxCore" order="LoadBeforeThis" />
+    <DependedModuleMetadata id="Sandbox" order="LoadBeforeThis" />
+    <DependedModuleMetadata id="StoryMode" order="LoadBeforeThis" optional="true" />
+    <DependedModuleMetadata id="Bannerlord.Harmony" order="LoadBeforeThis" />
+    <DependedModuleMetadata id="Bannerlord.ButterLib" order="LoadBeforeThis" />
+    <DependedModuleMetadata id="Bannerlord.UIExtenderEx" order="LoadBeforeThis" />
+    <DependedModuleMetadata id="Bannerlord.MBOptionScreen" order="LoadBeforeThis" />
+  </DependedModuleMetadatas>
 
   <SubModules>
     <SubModule>
