@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using KingdomFragmentation.Data;
 using KingdomFragmentation.Helpers;
 using KingdomFragmentation.Settings;
 using TaleWorlds.CampaignSystem;
@@ -8,18 +9,22 @@ using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
 using TaleWorlds.Localization;
-using TaleWorlds.ObjectSystem;
+
 
 namespace KingdomFragmentation.Logic
 {
     public sealed class KingdomCreator
     {
         private readonly KingdomFragmentationSettings? _settings;
+        private readonly PresetAssignmentEngine? _presetEngine;
         private static int _idCounter = 0;
 
-        public KingdomCreator(KingdomFragmentationSettings? settings)
+        public KingdomCreator(
+            KingdomFragmentationSettings? settings,
+            PresetAssignmentEngine? presetEngine = null)
         {
             _settings = settings;
+            _presetEngine = presetEngine;
         }
 
         /// <summary>
@@ -47,29 +52,38 @@ namespace KingdomFragmentation.Logic
             }
 
             string kingdomId = BuildKingdomId(clan);
-            var (name, informal) = BuildKingdomNames(clan, anchor);
             var culture = clan.Culture ?? clan.Kingdom?.Culture;
-            var banner = Banner.CreateRandomBanner();
-            var (color1, color2) = ResolveColors(clan, kingdomId);
+            var kingdomPreset = _presetEngine?.DrawKingdomPreset(culture?.StringId);
+            var (name, informal) = BuildKingdomNames(clan, anchor, kingdomPreset);
+            var (color1, color2) = ResolveColors(clan, kingdomId, kingdomPreset);
+            string bannerSeed = kingdomPreset?.Id ?? kingdomId;
+            var banner = BannerGenerator.GenerateKingdomStyledBanner(
+                "kingdom_" + bannerSeed,
+                color1,
+                color2);
 
             LogHelper.Debug("KingdomCreator: creating '" + name + "' (id=" + kingdomId
                 + ") for clan '" + clan.Name + "'.");
 
-            // Create the kingdom object
+            // Create the kingdom object — must use Kingdom.CreateKingdom so it is
+            // registered in Campaign.Current.Kingdoms / _factions.  Using
+            // MBObjectManager.CreateObject<Kingdom> skips that registration which
+            // causes NullReferenceExceptions in ChangeKingdomAction and settlement
+            // ownership transfers.
             Kingdom? kingdom;
             try
             {
-                kingdom = MBObjectManager.Instance.CreateObject<Kingdom>(kingdomId);
+                kingdom = Kingdom.CreateKingdom(kingdomId);
             }
             catch (Exception ex)
             {
-                LogHelper.Error("MBObjectManager threw creating '" + kingdomId + "': " + ex.Message);
+                LogHelper.Error("Kingdom.CreateKingdom threw for '" + kingdomId + "': " + ex.Message);
                 return null;
             }
 
             if (kingdom == null)
             {
-                LogHelper.Error("MBObjectManager returned null for '" + kingdomId + "'.");
+                LogHelper.Error("Kingdom.CreateKingdom returned null for '" + kingdomId + "'.");
                 return null;
             }
 
@@ -97,6 +111,7 @@ namespace KingdomFragmentation.Logic
             // Move clan into the kingdom — cascading fallback
             bool moved = false;
 
+            // First try: ApplyByCreateKingdom (the intended API for this scenario)
             try
             {
                 ChangeKingdomAction.ApplyByCreateKingdom(clan, kingdom, false);
@@ -107,6 +122,7 @@ namespace KingdomFragmentation.Logic
                 LogHelper.Warn("ApplyByCreateKingdom failed: " + ex.Message + " — trying join.");
             }
 
+            // Second try: ApplyByJoinToKingdom
             if (!moved)
             {
                 try
@@ -120,13 +136,14 @@ namespace KingdomFragmentation.Logic
                 }
             }
 
+            // Third try: direct property setter (bidirectional — calls
+            // Clan.EnterKingdomInternal which updates Kingdom._clans)
             if (!moved)
             {
                 try
                 {
+                    kingdom.RulingClan = clan;
                     clan.Kingdom = kingdom;
-                    if (kingdom.RulingClan == null)
-                        kingdom.RulingClan = clan;
                     moved = clan.Kingdom == kingdom;
                 }
                 catch (Exception ex)
@@ -147,6 +164,18 @@ namespace KingdomFragmentation.Logic
                 try { kingdom.RulingClan = clan; } catch { }
             }
 
+            if (kingdomPreset != null)
+            {
+                try
+                {
+                    _presetEngine?.RegisterKingdomPreset(kingdom, clan, kingdomPreset);
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.Debug("KingdomCreator: failed to register kingdom preset: " + ex.Message);
+                }
+            }
+
             LogHelper.Info("Created kingdom '" + name + "' led by '" + clan.Leader.Name + "'.");
             return kingdom;
         }
@@ -155,8 +184,14 @@ namespace KingdomFragmentation.Logic
         // Naming
         // =====================================================================
 
-        private (string name, string informal) BuildKingdomNames(Clan clan, Settlement anchor)
+        private (string name, string informal) BuildKingdomNames(
+            Clan clan,
+            Settlement anchor,
+            KingdomPreset? kingdomPreset)
         {
+            if (kingdomPreset != null)
+                return (kingdomPreset.FormalName, kingdomPreset.InformalName);
+
             string prefix = _settings?.KingdomNamePrefix ?? "Kingdom of ";
             KingdomNamingModeOption mode = _settings?.KingdomNamingMode
                 ?? KingdomNamingModeOption.ClanBased;
@@ -190,8 +225,14 @@ namespace KingdomFragmentation.Logic
             return "kf_" + safe + "_" + _idCounter;
         }
 
-        private (uint, uint) ResolveColors(Clan clan, string kingdomId)
+        private (uint, uint) ResolveColors(
+            Clan clan,
+            string kingdomId,
+            KingdomPreset? kingdomPreset)
         {
+            if (kingdomPreset != null)
+                return (kingdomPreset.PrimaryColor, kingdomPreset.SecondaryColor);
+
             BannerColorModeOption mode = _settings?.BannerColorMode
                 ?? BannerColorModeOption.UniquePerKingdom;
 

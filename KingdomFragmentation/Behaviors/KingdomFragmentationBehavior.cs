@@ -68,14 +68,10 @@ namespace KingdomFragmentation.Behaviors
 
         private void OnGameLoadFinished()
         {
-            LogHelper.Info("OnGameLoadFinishedEvent fired.");
-            var settings = KingdomFragmentationSettings.Instance;
-            if (settings != null && settings.NewCampaignsOnly)
-            {
-                LogHelper.Info("NewCampaignsOnly = true and this is a loaded save. Skipping.");
-                return;
-            }
-            TryRunFragmentation("OnGameLoadFinished");
+            // Fragmentation must NEVER run on a loaded save — only on new campaigns via
+            // OnNewGameCreatedPartialFollowUpEndEvent. This block is unconditional so that
+            // a missing or unavailable MCM settings instance cannot accidentally bypass it.
+            LogHelper.Info("OnGameLoadFinishedEvent fired — loaded save detected, fragmentation blocked.");
         }
 
         private void TryRunFragmentation(string trigger)
@@ -122,7 +118,7 @@ namespace KingdomFragmentation.Behaviors
             }
             catch (Exception ex)
             {
-                LogHelper.Error("Fragmentation error: " + ex.Message);
+                LogHelper.Error("Fragmentation error: " + DescribeException(ex));
                 LogHelper.Warn("Partial changes may have been applied.");
             }
         }
@@ -158,18 +154,33 @@ namespace KingdomFragmentation.Behaviors
 
         private static void EnforceTruce()
         {
-            var kfKingdoms = Kingdom.All
-                .Where(k => k != null && !k.IsEliminated
-                    && k.StringId != null
-                    && k.StringId.StartsWith("kf_", StringComparison.OrdinalIgnoreCase))
-                .ToArray();
+            var settings = KingdomFragmentationSettings.Instance;
+            bool includeVanilla = settings?.TruceIncludesVanillaKingdoms ?? false;
 
-            for (int i = 0; i < kfKingdoms.Length; i++)
+            Kingdom[] truceKingdoms;
+            if (includeVanilla)
             {
-                for (int j = i + 1; j < kfKingdoms.Length; j++)
+                // All non-eliminated kingdoms
+                truceKingdoms = Kingdom.All
+                    .Where(k => k != null && !k.IsEliminated && k.StringId != null)
+                    .ToArray();
+            }
+            else
+            {
+                // Only kf_ kingdoms
+                truceKingdoms = Kingdom.All
+                    .Where(k => k != null && !k.IsEliminated
+                        && k.StringId != null
+                        && k.StringId.StartsWith("kf_", StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+            }
+
+            for (int i = 0; i < truceKingdoms.Length; i++)
+            {
+                for (int j = i + 1; j < truceKingdoms.Length; j++)
                 {
-                    var a = kfKingdoms[i];
-                    var b = kfKingdoms[j];
+                    var a = truceKingdoms[i];
+                    var b = truceKingdoms[j];
                     if (FactionManager.IsAtWarAgainstFaction(a, b))
                     {
                         try
@@ -239,6 +250,20 @@ namespace KingdomFragmentation.Behaviors
                     LogHelper.Warn("Loyalty enforcement error: " + ex.Message);
                 }
             }
+        }
+
+        private static string DescribeException(Exception ex)
+        {
+            var parts = new List<string>();
+            Exception current = ex;
+
+            while (current != null)
+            {
+                parts.Add(current.GetType().Name + ": " + current.Message);
+                current = current.InnerException;
+            }
+
+            return string.Join(" | Inner: ", parts);
         }
     }
 }

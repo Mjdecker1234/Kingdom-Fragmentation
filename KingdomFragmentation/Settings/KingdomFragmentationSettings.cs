@@ -95,6 +95,31 @@ namespace KingdomFragmentation.Settings
         }
         private int _heroesPerClan = 5;
 
+        [SettingPropertyGroupAttribute("1. Kingdom Setup", GroupOrder = 1)]
+        [SettingPropertyIntegerAttribute(
+            "Original Kingdom Retention %",
+            0, 100,
+            RequireRestart = false,
+            HintText = "Percentage of each vanilla kingdom's clans that stay with it. 0 = take all clans, 100 = leave vanilla kingdoms untouched.")]
+        public int OriginalKingdomRetentionPercent
+        {
+            get => _originalKingdomRetentionPercent;
+            set { _originalKingdomRetentionPercent = value; OnPropertyChanged(); }
+        }
+        private int _originalKingdomRetentionPercent = 40;
+
+        [SettingPropertyGroupAttribute("1. Kingdom Setup", GroupOrder = 1)]
+        [SettingPropertyBoolAttribute(
+            "Protect Player Clan Fiefs",
+            RequireRestart = false,
+            HintText = "When on, the player clan's fiefs are never redistributed during fragmentation.")]
+        public bool ProtectPlayerClanFiefs
+        {
+            get => _protectPlayerClanFiefs;
+            set { _protectPlayerClanFiefs = value; OnPropertyChanged(); }
+        }
+        private bool _protectPlayerClanFiefs = true;
+
         // ==================================================================
         // GROUP 2 — Kingdom Appearance
         // ==================================================================
@@ -143,11 +168,130 @@ namespace KingdomFragmentation.Settings
         public BannerColorModeOption BannerColorMode =>
             ParseEnum<BannerColorModeOption>(BannerColorModeDropdown?.SelectedValue, BannerColorModeOption.UniquePerKingdom);
 
+        [SettingPropertyGroupAttribute("2. Kingdom Appearance", GroupOrder = 2)]
+        [SettingPropertyBoolAttribute(
+            "Use Preset World Identities",
+            RequireRestart = false,
+            HintText = "When on, kingdoms/clans/heroes use curated preset catalogs. When off, fallback procedural identity is used.")]
+        public bool UsePresetWorld
+        {
+            get => _usePresetWorld;
+            set { _usePresetWorld = value; OnPropertyChanged(); }
+        }
+        private bool _usePresetWorld = true;
+
+        [SettingPropertyGroupAttribute("2. Kingdom Appearance", GroupOrder = 2)]
+        [SettingPropertyBoolAttribute(
+            "Preset Strict Culture Matching",
+            RequireRestart = false,
+            HintText = "When on, preset draws only use matching culture decks. If a culture deck is exhausted, fallback procedural identity is used.")]
+        public bool PresetStrictCulture
+        {
+            get => _presetStrictCulture;
+            set { _presetStrictCulture = value; OnPropertyChanged(); }
+        }
+        private bool _presetStrictCulture = false;
+
+        [SettingPropertyGroupAttribute("2. Kingdom Appearance", GroupOrder = 2)]
+        [SettingPropertyIntegerAttribute(
+            "Archetype Aggressiveness %",
+            50, 200,
+            RequireRestart = false,
+            HintText = "Scales combat-oriented archetype skills. 100 = baseline preset values.")]
+        public int ArchetypeAggressivenessPercent
+        {
+            get => _archetypeAggressivenessPercent;
+            set { _archetypeAggressivenessPercent = value; OnPropertyChanged(); }
+        }
+        private int _archetypeAggressivenessPercent = 120;
+
         // ==================================================================
-        // GROUP 3 — Stability & Debug
+        // GROUP 3 — Clan & Fief Distribution
         // ==================================================================
 
-        [SettingPropertyGroupAttribute("3. Stability & Debug", GroupOrder = 3)]
+        [SettingPropertyGroupAttribute("3. Clan & Fief Distribution", GroupOrder = 3)]
+        [SettingPropertyBoolAttribute(
+            "Culture-Aware Clan Assignment",
+            RequireRestart = false,
+            HintText = "Prefer assigning clans to kingdoms of matching culture before filling remaining slots.")]
+        public bool CultureAwareClanAssignment
+        {
+            get => _cultureAwareClanAssignment;
+            set { _cultureAwareClanAssignment = value; OnPropertyChanged(); }
+        }
+        private bool _cultureAwareClanAssignment = true;
+
+        [SettingPropertyGroupAttribute("3. Clan & Fief Distribution", GroupOrder = 3)]
+        [SettingPropertyBoolAttribute(
+            "Geographic Fief Distribution",
+            RequireRestart = false,
+            HintText = "Assign fiefs based on proximity to each kingdom's capital. When off, fiefs are distributed round-robin.")]
+        public bool GeographicFiefDistribution
+        {
+            get => _geographicFiefDistribution;
+            set { _geographicFiefDistribution = value; OnPropertyChanged(); }
+        }
+        private bool _geographicFiefDistribution = true;
+
+        [SettingPropertyGroupAttribute("3. Clan & Fief Distribution", GroupOrder = 3)]
+        [SettingPropertyBoolAttribute(
+            "Distribute Fiefs to Vassals",
+            RequireRestart = false,
+            HintText = "Spread fiefs among vassal clans, not just the ruling clan.")]
+        public bool DistributeFiefsToVassals
+        {
+            get => _distributeFiefsToVassals;
+            set { _distributeFiefsToVassals = value; OnPropertyChanged(); }
+        }
+        private bool _distributeFiefsToVassals = true;
+
+        [SettingPropertyGroupAttribute("3. Clan & Fief Distribution", GroupOrder = 3)]
+        [SettingPropertyIntegerAttribute(
+            "Min Fiefs per Original Kingdom",
+            0, 20,
+            RequireRestart = false,
+            HintText = "Minimum number of fiefs each vanilla kingdom keeps regardless of retention %.")]
+        public int MinFiefsPerOriginalKingdom
+        {
+            get => _minFiefsPerOriginalKingdom;
+            set { _minFiefsPerOriginalKingdom = value; OnPropertyChanged(); }
+        }
+        private int _minFiefsPerOriginalKingdom = 3;
+
+        // ==================================================================
+        // GROUP 4 — Diplomacy & Relations
+        // ==================================================================
+
+        [SettingPropertyGroupAttribute("4. Diplomacy & Relations", GroupOrder = 4)]
+        [SettingPropertyIntegerAttribute(
+            "Initial Relations Bonus",
+            0, 100,
+            RequireRestart = false,
+            HintText = "Starting relation bonus between kingdoms of the same culture. 0 = no bonus.")]
+        public int InitialRelationsBonus
+        {
+            get => _initialRelationsBonus;
+            set { _initialRelationsBonus = value; OnPropertyChanged(); }
+        }
+        private int _initialRelationsBonus = 20;
+
+        [SettingPropertyGroupAttribute("4. Diplomacy & Relations", GroupOrder = 4)]
+        [SettingPropertyBoolAttribute(
+            "Truce Includes Vanilla Kingdoms",
+            RequireRestart = false,
+            HintText = "When on, the starting truce also prevents wars between new and vanilla kingdoms.")]
+        public bool TruceIncludesVanillaKingdoms
+        {
+            get => _truceIncludesVanillaKingdoms;
+            set { _truceIncludesVanillaKingdoms = value; OnPropertyChanged(); }
+        }
+        private bool _truceIncludesVanillaKingdoms = false;
+
+        // ==================================================================
+        // GROUP 5 — Stability & Debug
+        // ==================================================================
+
+        [SettingPropertyGroupAttribute("5. Stability & Debug", GroupOrder = 5)]
         [SettingPropertyIntegerAttribute(
             "Starting Truce Days",
             0, 365,
@@ -160,7 +304,7 @@ namespace KingdomFragmentation.Settings
         }
         private int _startingTruceDays = 30;
 
-        [SettingPropertyGroupAttribute("3. Stability & Debug", GroupOrder = 3)]
+        [SettingPropertyGroupAttribute("5. Stability & Debug", GroupOrder = 5)]
         [SettingPropertyIntegerAttribute(
             "Defection Lockout Days",
             0, 365,
@@ -173,7 +317,7 @@ namespace KingdomFragmentation.Settings
         }
         private int _defectionLockoutDays = 60;
 
-        [SettingPropertyGroupAttribute("3. Stability & Debug", GroupOrder = 3)]
+        [SettingPropertyGroupAttribute("5. Stability & Debug", GroupOrder = 5)]
         [SettingPropertyBoolAttribute(
             "New Campaigns Only",
             RequireRestart = false,
@@ -185,7 +329,7 @@ namespace KingdomFragmentation.Settings
         }
         private bool _newCampaignsOnly = true;
 
-        [SettingPropertyGroupAttribute("3. Stability & Debug", GroupOrder = 3)]
+        [SettingPropertyGroupAttribute("5. Stability & Debug", GroupOrder = 5)]
         [SettingPropertyBoolAttribute(
             "Debug Logging",
             RequireRestart = false,
@@ -196,6 +340,18 @@ namespace KingdomFragmentation.Settings
             set { _debugLogging = value; OnPropertyChanged(); }
         }
         private bool _debugLogging = false;
+
+        [SettingPropertyGroupAttribute("5. Stability & Debug", GroupOrder = 5)]
+        [SettingPropertyBoolAttribute(
+            "Preset Run Report",
+            RequireRestart = false,
+            HintText = "Logs selected kingdom/clan/hero presets each run into the mod log.")]
+        public bool PresetDebugReport
+        {
+            get => _presetDebugReport;
+            set { _presetDebugReport = value; OnPropertyChanged(); }
+        }
+        private bool _presetDebugReport = true;
 
         // ------------------------------------------------------------------
         // Helpers

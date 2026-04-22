@@ -31,20 +31,18 @@ namespace KingdomFragmentation
         }
 
         /// <summary>
-        /// Called for every campaign start — both new games and loaded saves.
-        /// We register the behaviour here (not inside an event callback) so that
-        /// <see cref="KingdomFragmentationBehavior.RegisterEvents"/> is invoked
-        /// during the normal campaign-system initialisation pass, guaranteeing
-        /// that <c>OnNewGameCreatedPartialFollowUpEndEvent</c> fires correctly
-        /// for Sandbox and Story Mode alike.
+        /// Called early in campaign initialisation — before the campaign system
+        /// calls <c>RegisterEvents</c> on all behaviours.  This guarantees that
+        /// <see cref="KingdomFragmentationBehavior.RegisterEvents"/> runs in
+        /// time to wire <c>OnNewGameCreatedPartialFollowUpEndEvent</c>.
         /// </summary>
-        public override void OnCampaignStart(Game game, object starterObject)
+        protected override void OnGameStart(Game game, IGameStarter gameStarterObject)
         {
-            base.OnCampaignStart(game, starterObject);
+            base.OnGameStart(game, gameStarterObject);
 
             if (game.GameType is Campaign)
             {
-                var starter = starterObject as CampaignGameStarter;
+                var starter = gameStarterObject as CampaignGameStarter;
                 if (starter != null)
                 {
                     LogHelper.Info("Kingdom Fragmentation: adding campaign behavior.");

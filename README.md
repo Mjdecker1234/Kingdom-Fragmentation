@@ -53,17 +53,7 @@ independent kingdoms — one per clan — on new-campaign creation.
 * [.NET SDK 4.7.2 or later](https://dotnet.microsoft.com/download)
 * Bannerlord installed (used for DLL references)
 
-### Quick build
-
-```bash
-# Windows
-build.bat
-
-# Linux / macOS
-bash build.sh
-```
-
-### Manual build
+### Build
 
 ```bash
 cd KingdomFragmentation
@@ -90,8 +80,8 @@ The compiled `KingdomFragmentation.dll` will appear in
    factions, mercenaries, etc.).
 
 3. **Kingdom creation** — `KingdomCreator` calls
-   `MBObjectManager.Instance.CreateObject&lt;Kingdom&gt;()` with a unique string ID,
-   initialises the kingdom via `Kingdom.InitializeKingdom(...)`, then calls
+   `Kingdom.CreateKingdom(uniqueStringId)` to register the new faction,
+   initialises it via `Kingdom.InitializeKingdom(...)`, then calls
    `ChangeKingdomAction.ApplyByJoinToKingdom(clan, newKingdom)` to move the
    clan.
 
@@ -144,10 +134,9 @@ The compiled `KingdomFragmentation.dll` will appear in
 
 * **New campaigns only** — The `_fragmentationApplied` save flag and the
   `NewCampaignsOnly` MCM setting ensure the mod never fires on loaded saves.
-* **MCM optional** — MCM is listed as an **optional** dependency in `SubModule.xml`.
-  If MCM is absent, the behavior catches the missing-instance case and uses
-  compiled-in defaults so the game still starts without crashing.  For the
-  best experience, install MCM v5.x.
+* **MCM required** — MCM v5.x (`Bannerlord.MBOptionScreen`) is a **required**
+  dependency declared in `SubModule.xml`.  The mod will not load without it.
+  Install MCM v5.x before enabling KingdomFragmentation.
 * **Active enforcement** — `DefectionLockoutDays`, `JoinGracePeriodDays`, and
   `AntiCollapseProtectionDays` are now actively enforced via a daily-tick handler
   that monitors clan assignments and forces defecting clans back to their assigned
